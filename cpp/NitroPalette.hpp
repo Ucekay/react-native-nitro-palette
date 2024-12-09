@@ -14,10 +14,8 @@ class NitroPalette : public HybridNitroPaletteSpec {
   {}
 
   std::vector<std::string> extractColors(
-      const std::shared_ptr<ArrayBuffer>&
-          source,  // Changed from NativeArrayBuffer to ArrayBuffer
-      double width, double height, double colorCount,
-      double quality) override;  // Added override
+      const std::shared_ptr<ArrayBuffer>& source, double colorCount,
+      double quality, bool ignoreWhite) override;
 
   int32_t getExternalMemorySize() const {
     // Calculate the external memory size

@@ -5,6 +5,17 @@
 #include <cstdint>
 #include <memory>
 #include <NitroModules/ArrayBuffer.hpp>
+#include <iostream>
+
+#ifdef DEBUG
+#define MMCQ_LOG(msg) std::cout << "[MMCQ] " << msg << std::endl
+#define MMCQ_ERROR(msg) std::cerr << "[MMCQ ERROR] " << msg << std::endl
+#define MMCQ_DEBUG(msg) std::cout << "[MMCQ DEBUG] " << msg << std::endl
+#else
+#define MMCQ_LOG(msg)
+#define MMCQ_ERROR(msg)
+#define MMCQ_DEBUG(msg)
+#endif
 
 class MMCQ {
  public:
@@ -12,89 +23,89 @@ class MMCQ {
     uint8_t r;
     uint8_t g;
     uint8_t b;
+
+    Color() : r(0), g(0), b(0) {}
+    Color(uint8_t r, uint8_t g, uint8_t b) : r(r), g(g), b(b) {}
+
     std::string toString() const;
-    Color(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0);
   };
+
+  enum ColorChannel { R, G, B };
 
   class VBox {
    public:
+    struct Range {
+      int begin;
+      int end;
+    };
+
+    VBox(uint8_t rMin, uint8_t rMax, uint8_t gMin, uint8_t gMax, uint8_t bMin,
+         uint8_t bMax, std::vector<int>& histogram);
+    VBox(const VBox& vbox);
+    VBox& operator=(const VBox& other);
+    VBox& operator=(VBox&& other) noexcept = default;
+
+    Range makeRange(uint8_t min, uint8_t max) const;
+    Range getRRange() const;
+    Range getGRange() const;
+    Range getBRange() const;
+
+    int getVolume(bool forceRecalculation = false) const;
+    int getCount(bool forceRecalculation = false) const;
+    Color getAverage(bool forceRecalculation = false) const;
+    ColorChannel widestColorChannel() const;
+
     uint8_t rMin, rMax;
     uint8_t gMin, gMax;
     uint8_t bMin, bMax;
 
-    VBox()
-        : rMin(0),
-          rMax(0),
-          gMin(0),
-          gMax(0),
-          bMin(0),
-          bMax(0) {}  // デフォルトコンストラクタを追加
-    VBox(uint8_t rMin, uint8_t rMax, uint8_t gMin, uint8_t gMax, uint8_t bMin,
-         uint8_t bMax, const std::vector<int>& histogram);
-    VBox(const VBox& other);
-    VBox(VBox&& other) noexcept;
-    VBox& operator=(const VBox& other);
-    VBox& operator=(VBox&& other) noexcept;
-
-    int getVolume(bool forceRecalculate = false) const;
-    int getCount(bool forceRecalculate = false) const;
-    Color getAverage(bool forceRecalculate = false) const;
-
-    enum class ColorChannel { R, G, B };
-    ColorChannel widestColorChannel() const;
-
    private:
-    std::vector<int> histogram;  // 参照からコピーに変更
-    mutable std::unique_ptr<Color> average;
-    mutable int volume{0};
-    mutable int count{-1};
+    std::shared_ptr<std::vector<int>> histogram;
+    mutable std::optional<Color> average;
+    mutable std::optional<int> volume;
+    mutable std::optional<int> count;
   };
 
   class ColorMap {
    public:
     ColorMap() = default;
-    ColorMap(const ColorMap&) = delete;             // コピー禁止
-    ColorMap& operator=(const ColorMap&) = delete;  // コピー禁止
-    ColorMap(ColorMap&&) noexcept = default;  // ムーブコンストラクタを追加
-    ColorMap& operator=(ColorMap&&) noexcept = default;  // ムーブ代入を追加
-
-    void push(VBox&& vbox);  // ムーブセマンティクスのみを使用
+    ColorMap(const ColorMap& other);
+    ColorMap& operator=(const ColorMap& other);
+    ColorMap(ColorMap&& other) noexcept = default;
+    ColorMap& operator=(ColorMap&& other) noexcept = default;
     std::vector<Color> makePalette() const;
     Color makeNearestColor(const Color& color) const;
+    void push(const VBox& vbox);
 
    private:
     std::vector<VBox> vboxes;
   };
 
-  static std::unique_ptr<ColorMap> quantize(
-      const std::shared_ptr<margelo::nitro::ArrayBuffer>& pixelsBuffer,
-      int quality, bool ignoreWhite, int maxColors);
+  static std::unique_ptr<ColorMap> quantize(const std::vector<uint8_t>& pixels,
+                                            int maxColors, int quality,
+                                            bool ignoreWhite);
 
  private:
-  static const int SIGNAL_BITS = 5;
-  static const int RIGHT_SHIFT = 8 - SIGNAL_BITS;
-  static const int MULTIPLIER = 1 << RIGHT_SHIFT;
-  static const int HISTOGRAM_SIZE = 1 << (3 * SIGNAL_BITS);
-  static const int VBOX_LENGTH = 1 << SIGNAL_BITS;
-  static const double FRACTION_BY_POPULATION;
-  static const int MAX_ITERATIONS = 1000;
+  static constexpr int SIGNAL_BITS = 5;
+  static constexpr int RIGHT_SHIFT = 8 - SIGNAL_BITS;
+  static constexpr int MULTIPLIER = 1 << RIGHT_SHIFT;
+  static constexpr int HISTOGRAM_SIZE = 1 << (3 * SIGNAL_BITS);
+  static constexpr int VBOX_LENGTH = 1 << SIGNAL_BITS;
+  static constexpr double FRACTION_BY_POPULATION = 0.75;
+  static constexpr int MAX_ITERATIONS = 1000;
 
   static int makeColorIndexOf(int red, int green, int blue);
 
-  // 新しい構造体を追加
-  struct HistogramAndVBox {
-    std::vector<int> histogram;
-    VBox vbox;
-  };
+  static std::pair<std::vector<int, std::allocator<int>>, VBox>
+  makeHistogramAndBox(
+      const std::vector<uint8_t, std::allocator<uint8_t>>& pixels, int quality,
+      bool ignoreWhite);
 
-  // メソッドの宣言を変更
-  static HistogramAndVBox makeHistogramAndVBox(
-      const std::vector<uint8_t>& pixels, int quality, bool ignoreWhite);
+  static std::vector<VBox, std::allocator<VBox>> applyMedianCut(
+      const std::vector<int, std::allocator<int>>& histogram, const VBox& vbox);
 
-  static std::vector<VBox> applyMedianCut(const std::vector<int>& histogram,
-                                          const VBox& vbox);
-  static std::vector<VBox> cut(VBox::ColorChannel channel, const VBox& vbox,
-                               const std::vector<int>& partialSum,
+  static std::vector<VBox> cut(ColorChannel axis, const VBox& vbox,
+                               const std::vector<int>& partialSun,
                                const std::vector<int>& lookAheadSum, int total);
 
   static void iterate(std::vector<VBox>& queue,

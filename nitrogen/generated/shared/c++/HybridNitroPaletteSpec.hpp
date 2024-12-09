@@ -51,7 +51,7 @@ namespace margelo::nitro::nitropalette {
 
     public:
       // Methods
-      virtual std::vector<std::string> extractColors(const std::shared_ptr<ArrayBuffer>& source, double width, double height, double colorCount, double quality) = 0;
+      virtual std::vector<std::string> extractColors(const std::shared_ptr<ArrayBuffer>& source, double colorCount, double quality, bool ignoreWhite) = 0;
 
     protected:
       // Hybrid Setup

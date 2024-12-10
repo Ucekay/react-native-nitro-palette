@@ -7,16 +7,6 @@
 #include <NitroModules/ArrayBuffer.hpp>
 #include <iostream>
 
-#ifdef DEBUG
-#define MMCQ_LOG(msg) std::cout << "[MMCQ] " << msg << std::endl
-#define MMCQ_ERROR(msg) std::cerr << "[MMCQ ERROR] " << msg << std::endl
-#define MMCQ_DEBUG(msg) std::cout << "[MMCQ DEBUG] " << msg << std::endl
-#else
-#define MMCQ_LOG(msg)
-#define MMCQ_ERROR(msg)
-#define MMCQ_DEBUG(msg)
-#endif
-
 class MMCQ {
  public:
   struct Color {
@@ -44,11 +34,6 @@ class MMCQ {
     VBox(const VBox& vbox);
     VBox& operator=(const VBox& other);
     VBox& operator=(VBox&& other) noexcept = default;
-
-    Range makeRange(uint8_t min, uint8_t max) const;
-    Range getRRange() const;
-    Range getGRange() const;
-    Range getBRange() const;
 
     int getVolume(bool forceRecalculation = false) const;
     int getCount(bool forceRecalculation = false) const;
@@ -93,6 +78,7 @@ class MMCQ {
   static constexpr int VBOX_LENGTH = 1 << SIGNAL_BITS;
   static constexpr double FRACTION_BY_POPULATION = 0.75;
   static constexpr int MAX_ITERATIONS = 1000;
+  static constexpr int MASK = (1 << SIGNAL_BITS) - 1;
 
   static int makeColorIndexOf(int red, int green, int blue);
 

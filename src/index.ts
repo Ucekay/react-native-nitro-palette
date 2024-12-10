@@ -10,7 +10,6 @@ export const getPalette = async(
   ignoreWhite: boolean = true
 ): Promise<string[]> => {
   try {
-    const start1 = performance.now();
     const image = await loadData(source, imgFactory);
     if (!image) {
       throw new Error('Failed to create image');
@@ -19,17 +18,12 @@ export const getPalette = async(
       width: image.width(),
       height: image.height(),
       colorType: ColorType.RGBA_8888,
-      alphaType: AlphaType.Unpremul,
+      alphaType: AlphaType.Opaque,
     });
     if (!pixels) {
       throw new Error('Failed to read pixels');
     }
-    const end1 = performance.now();
-    const start2 = performance.now();
     const palette = NitroPalette.extractColors(pixels.buffer as ArrayBuffer, colorCount, quality, ignoreWhite);
-    const end2 = performance.now();
-    console.log(`Image load time: ${end1 - start1}ms`);
-    console.log(`Palette extraction time: ${end2 - start2}ms`);
     return palette.slice(0, colorCount);
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error));

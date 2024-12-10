@@ -2,9 +2,12 @@
 #include <NitroModules/ArrayBuffer.hpp>
 #include <algorithm>
 #include <cmath>
+#include <numeric>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 std::string MMCQ::Color::toString() const {
   std::ostringstream oss;
@@ -91,29 +94,6 @@ MMCQ::VBox& MMCQ::VBox::operator=(const VBox& other) {
   return *this;
 }
 
-MMCQ::VBox::Range MMCQ::VBox::makeRange(uint8_t min, uint8_t max) const {
-  if (min <= max) {
-    return Range{static_cast<int>(min), static_cast<int>(max) + 1};
-  } else {
-    return Range{
-        static_cast<int>(max),
-        static_cast<int>(min),
-    };
-  }
-}
-
-MMCQ::VBox::Range MMCQ::VBox::getRRange() const {
-  return makeRange(rMin, rMax);
-}
-
-MMCQ::VBox::Range MMCQ::VBox::getGRange() const {
-  return makeRange(gMin, gMax);
-}
-
-MMCQ::VBox::Range MMCQ::VBox::getBRange() const {
-  return makeRange(bMin, bMax);
-}
-
 int MMCQ::VBox::getVolume(bool forceRecalculation) const {
   if (!forceRecalculation && volume.has_value()) {
     return volume.value();
@@ -130,14 +110,17 @@ int MMCQ::VBox::getCount(bool forceRecalculation) const {
     return count.value();
   } else {
     int totalCount = 0;
-    for (int i = rMin; i <= rMax; i++) {
-      for (int j = gMin; j <= gMax; j++) {
-        for (int k = bMin; k <= bMax; k++) {
-          int index = MMCQ::makeColorIndexOf(i, j, k);
-          totalCount += histogram->at(index);
-        }
+    for (int index = 0; index < HISTOGRAM_SIZE; index++) {
+      int r = (index >> (2 * SIGNAL_BITS)) & MASK;
+      int g = (index >> SIGNAL_BITS) & MASK;
+      int b = index & MASK;
+
+      if (r >= rMin && r <= rMax && g >= gMin && g <= gMax && b >= bMin &&
+          b <= bMax) {
+        totalCount += histogram->at(index);
       }
     }
+
     count = totalCount;
     return totalCount;
   }
@@ -145,30 +128,31 @@ int MMCQ::VBox::getCount(bool forceRecalculation) const {
 
 MMCQ::Color MMCQ::VBox::getAverage(bool forceRecalculation) const {
   if (!forceRecalculation && average.has_value()) {
-    MMCQ_DEBUG("Calculating box average"
-               << (forceRecalculation ? " (forced)" : ""));
-
     return average.value();
   } else {
     int histogramValueSum = 0;
-    int rSum = 0, gSum = 0, bSum = 0;
+    int rSum = 0;
+    int gSum = 0;
+    int bSum = 0;
 
-    for (int i = rMin; i <= rMax; i++) {
-      for (int j = gMin; j <= gMax; j++) {
-        for (int k = bMin; k <= bMax; k++) {
-          int index = MMCQ::makeColorIndexOf(i, j, k);
-          int histogramValue = histogram->at(index);
-          histogramValueSum += histogramValue;
-          rSum += static_cast<int>(static_cast<double>(histogramValue) *
-                                   (static_cast<double>(i) + 0.5) *
-                                   static_cast<double>(MULTIPLIER));
-          gSum += static_cast<int>(static_cast<double>(histogramValue) *
-                                   (static_cast<double>(j) + 0.5) *
-                                   static_cast<double>(MULTIPLIER));
-          bSum += static_cast<int>(static_cast<double>(histogramValue) *
-                                   (static_cast<double>(k) + 0.5) *
-                                   static_cast<double>(MULTIPLIER));
-        }
+    const int mask = (1 << SIGNAL_BITS) - 1;
+
+    for (int index = 0; index < HISTOGRAM_SIZE; index++) {
+      int histogramValue = histogram->at(index);
+      if (histogramValue == 0) {
+        continue;
+      }
+      int r = (index >> (2 * SIGNAL_BITS)) & mask;
+      int g = (index >> SIGNAL_BITS) & mask;
+      int b = index & mask;
+
+      if (r >= rMin && r <= rMax && g >= gMin && g <= gMax && b >= bMin &&
+          b <= bMax) {
+        histogramValueSum += histogramValue;
+
+        rSum += static_cast<int>(histogramValue * (r + 0.5) * MULTIPLIER);
+        gSum += static_cast<int>(histogramValue * (g + 0.5) * MULTIPLIER);
+        bSum += static_cast<int>(histogramValue * (b + 0.5) * MULTIPLIER);
       }
     }
 
@@ -194,10 +178,6 @@ MMCQ::Color MMCQ::VBox::getAverage(bool forceRecalculation) const {
                                                   static_cast<int>(bMax) + 1) /
                                                  2,
                                              255))));
-    MMCQ_DEBUG("Box average calculated - R:"
-               << static_cast<int>(average.value().r)
-               << " G:" << static_cast<int>(average.value().g)
-               << " B:" << static_cast<int>(average.value().b));
     return average.value();
   }
 }
@@ -219,44 +199,27 @@ MMCQ::ColorChannel MMCQ::VBox::widestColorChannel() const {
 std::unique_ptr<MMCQ::ColorMap> MMCQ::quantize(
     const std::vector<uint8_t>& pixels, int maxColors, int quality,
     bool ignoreWhite) {
-  MMCQ_LOG("Starting quantization process");
-  MMCQ_DEBUG("Parameters: quality=" << quality
-                                    << ", ignoreWhite=" << ignoreWhite
-                                    << ", maxColors=" << maxColors);
-
-  if (pixels.empty() && maxColors < 1 && maxColors > 255) {
-    MMCQ_ERROR("Invalid input parameters");
+  if (pixels.empty() || maxColors < 1 || maxColors > 255) {
     return nullptr;
   }
 
-  MMCQ_LOG("Creating histogram and initial box");
   std::pair<std::vector<int, std::allocator<int>>, VBox> histogramAndBox =
       makeHistogramAndBox(pixels, quality, ignoreWhite);
-  MMCQ_DEBUG("Initial histogram size: " << histogramAndBox.first.size());
   std::vector<VBox> pqueue;
+  pqueue.reserve(maxColors);
   pqueue.push_back(histogramAndBox.second);
   int target = static_cast<int>(FRACTION_BY_POPULATION * maxColors);
-  MMCQ_DEBUG("Target colors: " << target);
-
-  MMCQ_LOG("Starting first iteration phase");
 
   iterate(pqueue, compareByCount, target, histogramAndBox.first);
-  MMCQ_DEBUG("First iteration complete. Queue size: " << pqueue.size());
-
-  MMCQ_LOG("Sorting by product");
   std::sort(pqueue.begin(), pqueue.end(), compareByProduct);
-  MMCQ_LOG("Starting second iteration phase");
 
   iterate(pqueue, compareByProduct, maxColors, histogramAndBox.first);
-  MMCQ_DEBUG("Second iteration complete. Final queue size: " << pqueue.size());
   std::reverse(pqueue.begin(), pqueue.end());
-  MMCQ_LOG("Creating color map");
 
   MMCQ::ColorMap colorMap;
   for (const auto& vbox : pqueue) {
     colorMap.push(vbox);
   }
-  MMCQ_LOG("Quantization complete");
   return std::make_unique<ColorMap>(colorMap);
 }
 
@@ -268,23 +231,25 @@ std::pair<std::vector<int, std::allocator<int>>, MMCQ::VBox>
 MMCQ::makeHistogramAndBox(
     const std::vector<uint8_t, std::allocator<uint8_t>>& pixels, int quality,
     bool ignoreWhite) {
-  MMCQ_LOG("Creating histogram");
   std::vector<int> histogram(HISTOGRAM_SIZE, 0);
-  uint8_t rMin, gMin, bMin = std::numeric_limits<uint8_t>::max();
-  uint8_t rMax, gMax, bmax = std::numeric_limits<uint8_t>::min();
+  uint8_t rMin = std::numeric_limits<uint8_t>::max();
+  uint8_t gMin = std::numeric_limits<uint8_t>::max();
+  uint8_t bMin = std::numeric_limits<uint8_t>::max();
+  uint8_t rMax = std::numeric_limits<uint8_t>::min();
+  uint8_t gMax = std::numeric_limits<uint8_t>::min();
+  uint8_t bmax = std::numeric_limits<uint8_t>::min();
 
   if (pixels.size() % 4 != 0 || pixels.size() < 4) {
-    MMCQ_ERROR("Invalid pixel data size: " << pixels.size());
     throw std::runtime_error("Invalid pixel data");
   }
 
   size_t pixelCount = pixels.size() / 4;
-  MMCQ_DEBUG("Processing " << pixelCount << " pixels");
-  for (size_t i = 0; i < pixelCount; i += quality) {
-    uint8_t r = pixels[i * 4];
-    uint8_t g = pixels[i * 4 + 1];
-    uint8_t b = pixels[i * 4 + 2];
-    uint8_t a = pixels[i * 4 + 3];
+  for (size_t i = 0; i < pixelCount; i += 4 * quality) {
+    const uint8_t* pixel = &pixels[i * 4];
+    uint8_t r = pixel[0];
+    uint8_t g = pixel[1];
+    uint8_t b = pixel[2];
+    uint8_t a = pixel[3];
 
     if (a <= 125 || (ignoreWhite && r > 250 && g > 250 && b > 250)) {
       continue;
@@ -307,9 +272,6 @@ MMCQ::makeHistogramAndBox(
 
     histogram[index]++;
   }
-  MMCQ_DEBUG("Color ranges - R: " << (int)rMin << "-" << (int)rMax
-                                  << " G: " << (int)gMin << "-" << (int)gMax
-                                  << " B: " << (int)bMin << "-" << (int)bmax);
 
   MMCQ::VBox vbox(rMin, rMax, gMin, gMax, bMin, bmax, histogram);
   return {histogram, vbox};
@@ -326,51 +288,52 @@ std::vector<MMCQ::VBox, std::allocator<MMCQ::VBox>> MMCQ::applyMedianCut(
   }
 
   int total = 0;
-  std::vector<int> partialSum;
-  partialSum.reserve(VBOX_LENGTH);
-  partialSum.resize(VBOX_LENGTH, -1);  // -1 = not set / 0 = 0
-
+  std::vector<int> partialSum(VBOX_LENGTH, 0);
   ColorChannel axis = vbox.widestColorChannel();
+
+  std::vector<int> channelSums(VBOX_LENGTH, 0);
+
+  for (int index = 0; index < HISTOGRAM_SIZE; index++) {
+    int r = (index >> (2 * SIGNAL_BITS)) & MASK;
+    int g = (index >> SIGNAL_BITS) & MASK;
+    int b = index & MASK;
+
+    if (histogram[index] == 0) continue;
+    if (r >= vbox.rMin && r <= vbox.rMax && g >= vbox.gMin && g <= vbox.gMax &&
+        b >= vbox.bMin && b <= vbox.bMax) {
+      switch (axis) {
+        case ColorChannel::R:
+          channelSums[r] += histogram[index];
+          break;
+        case ColorChannel::G:
+          channelSums[g] += histogram[index];
+          break;
+        case ColorChannel::B:
+          channelSums[b] += histogram[index];
+          break;
+      }
+    }
+  }
+
+  int vboxMin, vboxMax;
   switch (axis) {
     case ColorChannel::R:
-      for (int i = vbox.rMin; i <= vbox.rMax; i++) {
-        int sum = 0;
-        for (int j = vbox.gMin; j <= vbox.gMax; j++) {
-          for (int k = vbox.bMin; k <= vbox.bMax; k++) {
-            int index = MMCQ::makeColorIndexOf(i, j, k);
-            sum += histogram[index];
-          }
-        }
-        total += sum;
-        partialSum[i] = total;
-      }
+      vboxMin = vbox.rMin;
+      vboxMax = vbox.rMax;
       break;
     case ColorChannel::G:
-      for (int i = vbox.gMin; i <= vbox.gMax; i++) {
-        int sum = 0;
-        for (int j = vbox.rMin; j <= vbox.rMax; j++) {
-          for (int k = vbox.bMin; k <= vbox.bMax; k++) {
-            int index = MMCQ::makeColorIndexOf(j, i, k);
-            sum += histogram[index];
-          }
-        }
-        total += sum;
-        partialSum[i] = total;
-      }
+      vboxMin = vbox.gMin;
+      vboxMax = vbox.gMax;
       break;
     case ColorChannel::B:
-      for (int i = vbox.bMin; i <= vbox.bMax; i++) {
-        int sum = 0;
-        for (int j = vbox.rMin; j <= vbox.rMax; j++) {
-          for (int k = vbox.gMin; k <= vbox.gMax; k++) {
-            int index = MMCQ::makeColorIndexOf(j, k, i);
-            sum += histogram[index];
-          }
-        }
-        total += sum;
-        partialSum[i] = total;
-      }
+      vboxMin = vbox.bMin;
+      vboxMax = vbox.bMax;
       break;
+  }
+
+  for (int i = vboxMin; i <= vboxMax; i++) {
+    total += channelSums[i];
+    partialSum[i] = total;
   }
 
   std::vector<int> lookAheadSum;
@@ -459,21 +422,15 @@ std::vector<MMCQ::VBox> MMCQ::cut(ColorChannel axis, const VBox& vbox,
 void MMCQ::iterate(std::vector<VBox>& queue,
                    bool (*comparator)(const VBox&, const VBox&), int target,
                    const std::vector<int>& histogram) {
-  MMCQ_LOG("Starting iteration with target: " << target);
   int color = 1;
 
   for (int _ = 0; _ < MAX_ITERATIONS; _++) {
-    MMCQ_DEBUG("Iteration " << _ << ", current colors: " << color);
-
     if (queue.empty()) {
-      MMCQ_LOG("Queue is empty, terminating iteration");
       return;
     }
     VBox vbox = queue.back();
 
     if (vbox.getCount() == 0) {
-      MMCQ_DEBUG("Empty box encountered, continuing");
-
       std::sort(queue.begin(), queue.end(), comparator);
       continue;
     }
@@ -482,20 +439,17 @@ void MMCQ::iterate(std::vector<VBox>& queue,
 
     std::vector<VBox> vboxes = applyMedianCut(histogram, vbox);
     if (vboxes.empty()) {
-      MMCQ_DEBUG("Median cut produced no boxes");
       continue;
     };
     queue.push_back(vboxes[0]);
     if (vboxes.size() == 2) {
       queue.push_back(vboxes[1]);
       color++;
-      MMCQ_DEBUG("Split successful, new color count: " << color);
     }
 
     std::sort(queue.begin(), queue.end(), comparator);
 
     if (color >= target) {
-      MMCQ_LOG("Target colors reached: " << color);
       return;
     };
   }

@@ -3,7 +3,7 @@ import { NitroPalette } from './specs';
 
 const imgFactory = Skia.Image.MakeImageFromEncoded.bind(Skia.Image);
 
-export const getPalette = async (
+export const getPaletteAsync = async (
   source: string,
   colorCount: number = 5,
   quality: number = 10,

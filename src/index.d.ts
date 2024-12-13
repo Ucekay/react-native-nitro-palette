@@ -7,7 +7,7 @@ declare module 'react-native-nitro-palette' {
    * @param ignoreWhite - Whether to ignore white colors (default: true)
    * @returns Promise resolving to an array of rgb color strings
    */
-  export function getPalette(
+  export function getPaletteAsync(
     source: string,
     colorCount?: number,
     quality?: number,

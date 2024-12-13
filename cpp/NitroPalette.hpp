@@ -8,19 +8,18 @@ namespace nitro {
 namespace nitropalette {
 class NitroPalette : public HybridNitroPaletteSpec {
  public:
-  NitroPalette()
-      : HybridObject(TAG),        // Virtual base must be initialized first
-        HybridNitroPaletteSpec()  // Then the direct base class
-  {}
+  NitroPalette() : HybridObject(TAG), HybridNitroPaletteSpec() {}
 
   std::vector<std::string> extractColors(
       const std::shared_ptr<ArrayBuffer>& source, double colorCount,
       double quality, bool ignoreWhite) override;
 
-  int32_t getExternalMemorySize() const {
-    // Calculate the external memory size
-    return sizeof(NitroPalette);
+  size_t getExternalMemorySize() noexcept override {
+    return sizeof(NitroPalette) + currentImageSize_;
   }
+
+ private:
+  size_t currentImageSize_ = 0;
 };
 
 }  // namespace nitropalette

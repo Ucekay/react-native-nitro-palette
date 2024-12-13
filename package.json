@@ -1,10 +1,10 @@
 {
   "name": "react-native-nitro-palette",
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "Nitro module package",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
-  "types": "./lib/typescript/src/index.d.ts",
+  "types": "src/index.d.ts",
   "react-native": "src/index",
   "source": "src/index",
   "files": [

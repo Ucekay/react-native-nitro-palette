@@ -7,7 +7,7 @@ margelo::nitro::nitropalette::NitroPalette::extractColors(
     const std::shared_ptr<ArrayBuffer>& source, double colorCount,
     double quality, bool ignoreWhite) {
   currentImageSize_ = source->size();
-  if (!source || currentImageSize_) {
+  if (!source || currentImageSize_ < 4) {
     return {};
   }
 
@@ -19,7 +19,7 @@ margelo::nitro::nitropalette::NitroPalette::extractColors(
   quality = std::clamp(quality, 1.0, 10.0);
 
   auto pixels = reinterpret_cast<uint8_t*>(source->data());
-  std::vector<uint8_t> pixelsVector(pixels, pixels + source->size());
+  std::vector<uint8_t> pixelsVector(pixels, pixels + currentImageSize_);
 
   auto colorMap = MMCQ::quantize(pixelsVector, static_cast<int>(colorCount),
                                  static_cast<int>(quality), ignoreWhite);

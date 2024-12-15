@@ -111,13 +111,17 @@ int MMCQ::VBox::getCount(bool forceRecalculation) const {
   } else {
     int totalCount = 0;
     for (int index = 0; index < HISTOGRAM_SIZE; index++) {
+      int histogramValue = histogram->at(index);
+      if (histogramValue == 0) {
+        continue;
+      }
       int r = (index >> (2 * SIGNAL_BITS)) & MASK;
       int g = (index >> SIGNAL_BITS) & MASK;
       int b = index & MASK;
 
       if (r >= rMin && r <= rMax && g >= gMin && g <= gMax && b >= bMin &&
           b <= bMax) {
-        totalCount += histogram->at(index);
+        totalCount += histogramValue;
       }
     }
 
@@ -135,16 +139,14 @@ MMCQ::Color MMCQ::VBox::getAverage(bool forceRecalculation) const {
     int gSum = 0;
     int bSum = 0;
 
-    const int mask = (1 << SIGNAL_BITS) - 1;
-
     for (int index = 0; index < HISTOGRAM_SIZE; index++) {
       int histogramValue = histogram->at(index);
       if (histogramValue == 0) {
         continue;
       }
-      int r = (index >> (2 * SIGNAL_BITS)) & mask;
-      int g = (index >> SIGNAL_BITS) & mask;
-      int b = index & mask;
+      int r = (index >> (2 * SIGNAL_BITS)) & MASK;
+      int g = (index >> SIGNAL_BITS) & MASK;
+      int b = index & MASK;
 
       if (r >= rMin && r <= rMax && g >= gMin && g <= gMax && b >= bMin &&
           b <= bMax) {
@@ -288,68 +290,69 @@ std::vector<MMCQ::VBox, std::allocator<MMCQ::VBox>> MMCQ::applyMedianCut(
   }
 
   int total = 0;
-  std::vector<int> partialSum(VBOX_LENGTH, 0);
+  std::vector<int> partialSum(VBOX_LENGTH, -1);
   ColorChannel axis = vbox.widestColorChannel();
+  int vboxMin;
+  int vboxMax;
 
-  std::vector<int> channelSums(VBOX_LENGTH, 0);
-
-  for (int index = 0; index < HISTOGRAM_SIZE; index++) {
-    int r = (index >> (2 * SIGNAL_BITS)) & MASK;
-    int g = (index >> SIGNAL_BITS) & MASK;
-    int b = index & MASK;
-
-    if (histogram[index] == 0) continue;
-    if (r >= vbox.rMin && r <= vbox.rMax && g >= vbox.gMin && g <= vbox.gMax &&
-        b >= vbox.bMin && b <= vbox.bMax) {
-      switch (axis) {
-        case ColorChannel::R:
-          channelSums[r] += histogram[index];
-          break;
-        case ColorChannel::G:
-          channelSums[g] += histogram[index];
-          break;
-        case ColorChannel::B:
-          channelSums[b] += histogram[index];
-          break;
-      }
-    }
-  }
-
-  int vboxMin, vboxMax;
   switch (axis) {
     case ColorChannel::R:
       vboxMin = vbox.rMin;
       vboxMax = vbox.rMax;
+      for (int i = vbox.rMin; i <= vbox.rMax; i++) {
+        int sum = 0;
+        for (int j = vbox.gMin; j <= vbox.gMax; j++) {
+          for (int k = vbox.bMin; k <= vbox.bMax; k++) {
+            int index = makeColorIndexOf(i, j, k);
+            sum += histogram[index];
+          }
+        }
+        total += sum;
+        partialSum[i] = total;
+      }
       break;
     case ColorChannel::G:
       vboxMin = vbox.gMin;
       vboxMax = vbox.gMax;
+      for (int i = vbox.gMin; i <= vbox.gMax; i++) {
+        int sum = 0;
+        for (int j = vbox.rMin; j <= vbox.rMax; j++) {
+          for (int k = vbox.bMin; k <= vbox.bMax; k++) {
+            int index = makeColorIndexOf(j, i, k);
+            sum += histogram[index];
+          }
+        }
+        total = sum;
+        partialSum[i] = total;
+      }
       break;
     case ColorChannel::B:
       vboxMin = vbox.bMin;
       vboxMax = vbox.bMax;
+      for (int i = vbox.bMin; i <= vbox.bMax; i++) {
+        int sum = 0;
+        for (int j = vbox.rMin; j <= vbox.rMax; j++) {
+          for (int k = vbox.gMin; k <= vbox.gMax; k++) {
+            int index = makeColorIndexOf(j, k, i);
+            sum += histogram[index];
+          }
+        }
+        total = sum;
+        partialSum[i] = total;
+      }
+      break;
+    default:
       break;
   }
 
-  for (int i = vboxMin; i <= vboxMax; i++) {
-    total += channelSums[i];
-    partialSum[i] = total;
-  }
-
-  std::vector<int> lookAheadSum;
-  lookAheadSum.reserve(VBOX_LENGTH);
-  lookAheadSum.resize(VBOX_LENGTH, -1);  // -1 = not set / 0 = 0
-  for (int i = 0; i < VBOX_LENGTH; i++) {
-    int cumulativeSum = partialSum[i];
-    if (cumulativeSum != -1) {
-      lookAheadSum[i] = total - cumulativeSum;
+  std::vector<int> lookAheadSum(VBOX_LENGTH, -1);
+  for (int i = vboxMin; i < vboxMax; i++) {
+    if (partialSum[i] != -1) {
+      lookAheadSum[i] = total - partialSum[i];
     }
   }
 
-  std::vector<VBox> result;
-  result.reserve(2);
-  result = cut(axis, vbox, partialSum, lookAheadSum, total);
-  return result;
+  return cut(axis, vbox, partialSum, lookAheadSum, total);
 }
 
 std::vector<MMCQ::VBox> MMCQ::cut(ColorChannel axis, const VBox& vbox,

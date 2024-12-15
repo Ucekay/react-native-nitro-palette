@@ -66,9 +66,9 @@ class MMCQ {
     std::vector<VBox> vboxes;
   };
 
-  static std::unique_ptr<ColorMap> quantize(const std::vector<uint8_t>& pixels,
-                                            int maxColors, int quality,
-                                            bool ignoreWhite);
+  static std::unique_ptr<ColorMap> quantize(
+      std::shared_ptr<margelo::nitro::ArrayBuffer> source, int maxColors,
+      int quality, bool ignoreWhite);
 
  private:
   static constexpr int SIGNAL_BITS = 5;
@@ -83,9 +83,8 @@ class MMCQ {
   static int makeColorIndexOf(int red, int green, int blue);
 
   static std::pair<std::vector<int, std::allocator<int>>, VBox>
-  makeHistogramAndBox(
-      const std::vector<uint8_t, std::allocator<uint8_t>>& pixels, int quality,
-      bool ignoreWhite);
+  makeHistogramAndBox(const std::shared_ptr<margelo::nitro::ArrayBuffer> source,
+                      int quality, bool ignoreWhite);
 
   static std::vector<VBox, std::allocator<VBox>> applyMedianCut(
       const std::vector<int, std::allocator<int>>& histogram, const VBox& vbox);

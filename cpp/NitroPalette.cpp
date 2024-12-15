@@ -18,10 +18,7 @@ margelo::nitro::nitropalette::NitroPalette::extractColors(
   colorCount = std::clamp(colorCount, 1.0, 20.0);
   quality = std::clamp(quality, 1.0, 10.0);
 
-  auto pixels = reinterpret_cast<uint8_t*>(source->data());
-  std::vector<uint8_t> pixelsVector(pixels, pixels + currentImageSize_);
-
-  auto colorMap = MMCQ::quantize(pixelsVector, static_cast<int>(colorCount),
+  auto colorMap = MMCQ::quantize(source, static_cast<int>(colorCount),
                                  static_cast<int>(quality), ignoreWhite);
 
   auto palette = colorMap->makePalette();
@@ -31,10 +28,9 @@ margelo::nitro::nitropalette::NitroPalette::extractColors(
   }
 
   std::vector<std::string> result;
-  result.reserve(palette.size());
-  for (const auto& color : palette) {
-    result.push_back(color.toString());
+  result.reserve(colorCount);
+  for (int i = 0; i < colorCount; i++) {
+    result.push_back(palette[i].toString());
   }
-
   return result;
 }

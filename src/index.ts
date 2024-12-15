@@ -23,8 +23,7 @@ export const getPaletteAsync = async (
     if (!pixels) {
       throw new Error('Failed to read pixels');
     }
-    const palette = NitroPalette.extractColors(pixels.buffer as ArrayBuffer, colorCount, quality, ignoreWhite);
-    return palette.slice(0, colorCount);
+    return NitroPalette.extractColors(pixels.buffer as ArrayBuffer, colorCount, quality, ignoreWhite);
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : String(error));
   }

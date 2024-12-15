@@ -199,14 +199,15 @@ MMCQ::ColorChannel MMCQ::VBox::widestColorChannel() const {
 }
 
 std::unique_ptr<MMCQ::ColorMap> MMCQ::quantize(
-    const std::vector<uint8_t>& pixels, int maxColors, int quality,
-    bool ignoreWhite) {
-  if (pixels.empty() || maxColors < 1 || maxColors > 255) {
+    std::shared_ptr<margelo::nitro::ArrayBuffer> source, int maxColors,
+    int quality, bool ignoreWhite) {
+  if (source == nullptr || source->size() == 0 || maxColors < 1 ||
+      maxColors > 255) {
     return nullptr;
   }
 
   std::pair<std::vector<int, std::allocator<int>>, VBox> histogramAndBox =
-      makeHistogramAndBox(pixels, quality, ignoreWhite);
+      makeHistogramAndBox(source, quality, ignoreWhite);
   std::vector<VBox> pqueue;
   pqueue.reserve(maxColors);
   pqueue.push_back(histogramAndBox.second);
@@ -231,7 +232,7 @@ int MMCQ::makeColorIndexOf(int red, int green, int blue) {
 
 std::pair<std::vector<int, std::allocator<int>>, MMCQ::VBox>
 MMCQ::makeHistogramAndBox(
-    const std::vector<uint8_t, std::allocator<uint8_t>>& pixels, int quality,
+    const std::shared_ptr<margelo::nitro::ArrayBuffer> source, int quality,
     bool ignoreWhite) {
   std::vector<int> histogram(HISTOGRAM_SIZE, 0);
   uint8_t rMin = std::numeric_limits<uint8_t>::max();
@@ -241,17 +242,19 @@ MMCQ::makeHistogramAndBox(
   uint8_t gMax = std::numeric_limits<uint8_t>::min();
   uint8_t bmax = std::numeric_limits<uint8_t>::min();
 
-  if (pixels.size() % 4 != 0 || pixels.size() < 4) {
+  const size_t sourceSize = source->size();
+
+  if (sourceSize % 4 != 0 || sourceSize < 4) {
     throw std::runtime_error("Invalid pixel data");
   }
 
-  size_t pixelCount = pixels.size() / 4;
-  for (size_t i = 0; i < pixelCount; i += 4 * quality) {
-    const uint8_t* pixel = &pixels[i * 4];
-    uint8_t r = pixel[0];
-    uint8_t g = pixel[1];
-    uint8_t b = pixel[2];
-    uint8_t a = pixel[3];
+  size_t pixelCount = sourceSize / 4;
+  const uint8_t* pixel = source->data();
+  for (size_t i = 0; i < pixelCount; i += quality) {
+    uint8_t r = pixel[i * 4 + 0];
+    uint8_t g = pixel[i * 4 + 1];
+    uint8_t b = pixel[i * 4 + 2];
+    uint8_t a = pixel[i * 4 + 3];
 
     if (a <= 125 || (ignoreWhite && r > 250 && g > 250 && b > 250)) {
       continue;
